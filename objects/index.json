@@ -1,0 +1,82 @@
+{
+  "_comment": [
+    "Homepage thumbnails: \"image\": \"demo.jpg\". Try-on overlay: \"model\": \"jewellery.png\".",
+    "RINGS (folder ring-*): demo.jpg + jewellery.png + front.png + back.png.",
+    "  front.png = camera-facing; back.png = behind the finger. Auto for any new ring-* folder.",
+    "BANGLES (folder bangles-*): jewellery.png only \u2014 no front.png / back.png.",
+    "Size is fitted to the wrist in code \u2014 not to the PNG pixel length.",
+    "Necklaces: jewellery.png only \u2014 do not replace necklace-gold / necklace-diamond manually."
+  ],
+  "items": [
+    {
+      "folder": "necklace-gold",
+      "model": "jewellery.png",
+      "image": "demo.jpg"
+    },
+    {
+      "folder": "necklace-diamond",
+      "model": "jewellery.png",
+      "image": "demo.jpg"
+    },
+    {
+      "folder": "earring-gold",
+      "model": "jewellery.png",
+      "image": "demo.jpg"
+    },
+    {
+      "folder": "earring-diamond",
+      "model": "jewellery.png",
+      "image": "demo.jpg"
+    },
+    {
+      "folder": "earring-hoop",
+      "model": "jewellery.png",
+      "image": "demo.jpg"
+    },
+    {
+      "folder": "ring-band",
+      "model": "jewellery.png",
+      "image": "demo.jpg",
+      "front": "front.png",
+      "back": "back.png"
+    },
+    {
+      "folder": "ring-solitaire",
+      "model": "jewellery.png",
+      "image": "demo.jpg",
+      "front": "front.png",
+      "back": "back.png"
+    },
+    {
+      "folder": "bangles-gold",
+      "model": "jewellery.png",
+      "image": "demo.jpg"
+    },
+    {
+      "folder": "bangles-diamond",
+      "model": "jewellery.png",
+      "image": "demo.jpg"
+    },
+    {
+      "folder": "necklace-nl",
+      "model": "jewellery.png",
+      "image": "jewellery.png",
+      "category": "necklace",
+      "label": "NL"
+    },
+    {
+      "folder": "ring-chatgpt-image-aug-17-2026-04-07-04-pm",
+      "front": "front.png",
+      "back": "back.png",
+      "category": "ring",
+      "label": "ChatGPT Image Aug 17, 2026, 04_07_04 PM"
+    },
+    {
+      "folder": "ring-chatgpt-image-aug-17-2026-04-02-24-pm",
+      "front": "front.png",
+      "back": "back.png",
+      "category": "ring",
+      "label": "ChatGPT Image Aug 17, 2026, 04_02_24 PM"
+    }
+  ]
+}

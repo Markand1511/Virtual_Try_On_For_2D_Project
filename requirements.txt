@@ -1,0 +1,5 @@
+# No Python packages required to run the try-on app.
+# The browser loads MediaPipe from CDN; app.py is a static file server only.
+#
+# Optional (only for regenerating sample jewellery PNGs):
+# Pillow>=10.0.0

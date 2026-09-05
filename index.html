@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0A0908">
+  <!-- This page cannot version itself, and it is the one that carries the version -->
+  <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+  <meta name="description" content="Try on necklaces, earrings, rings and bangles virtually using your camera — AI-powered real-time jewellery try-on.">
+  <title>Jewellery Try On</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💎</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+
+  <!--
+    @imgly/background-removal (loaded dynamically from bg-removal.js)
+    internally does `import 'onnxruntime-web'` as a bare specifier —
+    that only resolves inside a bundler by default. An import map is
+    the standard browser mechanism to make bare specifiers resolve
+    without one. Version pinned to match what @imgly/background-removal
+    1.7.0 declares as its onnxruntime-web dependency.
+  -->
+  <script type="importmap">
+  {
+    "imports": {
+      "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.mjs"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app" class="jewelry-tryon-app">
+
+    <header class="header">
+      <h1 class="header-title">Jewellery Try On</h1>
+      <p class="header-subtitle">See it on yourself, in real time</p>
+      <div class="header-status">
+        <span id="tracking-status" class="status-dot offline" aria-hidden="true"></span>
+        <span id="tracking-label">Camera off</span>
+      </div>
+    </header>
+
+    <main class="main">
+
+      <section id="view-home" class="vto-view vto-view--home active" data-view="home">
+        <p class="product-shelf__eyebrow">Collection</p>
+        <h3 class="product-shelf__title">Choose a piece</h3>
+
+        <div class="upload-jewellery" id="upload-jewellery">
+          <label for="upload-jewellery-input" class="upload-jewellery__label">
+            <span class="upload-jewellery__icon" aria-hidden="true">📤</span>
+            <span>
+              <strong>Upload your own jewellery</strong>
+              <small>JPG or PNG — background is removed automatically if needed</small>
+            </span>
+          </label>
+          <select id="upload-jewellery-category" class="upload-jewellery__category" aria-label="Jewellery type">
+            <option value="necklace">Necklace</option>
+            <option value="earring">Earring</option>
+            <option value="ring">Ring</option>
+            <option value="bangles">Bangle</option>
+          </select>
+          <input type="file" id="upload-jewellery-input" accept=".jpg,.jpeg,.png,image/jpeg,image/png" hidden />
+          <!-- Rings and bangles need two photos (front, and back — behind the finger or
+               wrist) — same convention as the built-in ring-band / ring-solitaire folders
+               (front.png + back.png). -->
+          <input type="file" id="upload-jewellery-front-input" accept=".jpg,.jpeg,.png,image/jpeg,image/png" hidden />
+          <input type="file" id="upload-jewellery-back-input" accept=".jpg,.jpeg,.png,image/jpeg,image/png" hidden />
+        </div>
+
+        <div id="product-grid" class="product-grid"></div>
+
+        <div id="upload-name-modal" class="upload-name-modal hidden" hidden role="dialog" aria-modal="true" aria-labelledby="upload-name-modal-title">
+          <div class="upload-name-modal__backdrop"></div>
+          <form id="upload-name-form" class="upload-name-modal__card">
+            <h4 id="upload-name-modal-title" class="upload-name-modal__title">Name your jewellery</h4>
+            <p class="upload-name-modal__hint">This name will show on the homepage card.</p>
+            <input type="text" id="upload-name-input" class="upload-name-modal__input" maxlength="60" placeholder="e.g. My Gold Ring" autocomplete="off" required />
+            <div class="upload-name-modal__actions">
+              <button type="button" id="upload-name-cancel" class="upload-name-modal__btn upload-name-modal__btn--cancel">Cancel</button>
+              <button type="submit" id="upload-name-confirm" class="upload-name-modal__btn upload-name-modal__btn--confirm">Continue</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Rings and bangles need two photos (front + back). Shown before the
+             front-photo file picker opens, for the Ring and Bangle categories. -->
+        <div id="upload-front-modal" class="upload-name-modal hidden" hidden role="dialog" aria-modal="true" aria-labelledby="upload-front-modal-title">
+          <div class="upload-name-modal__backdrop"></div>
+          <div class="upload-name-modal__card">
+            <h4 id="upload-front-modal-title" class="upload-name-modal__title">Add the front photo</h4>
+            <p id="upload-front-modal-hint" class="upload-name-modal__hint">This piece needs a front photo (camera-facing) and a back photo, so it wraps correctly.</p>
+            <div class="upload-name-modal__actions">
+              <button type="button" id="upload-front-cancel" class="upload-name-modal__btn upload-name-modal__btn--cancel">Cancel</button>
+              <button type="button" id="upload-front-choose" class="upload-name-modal__btn upload-name-modal__btn--confirm">Choose front photo</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Shown after the front photo is picked, for the Ring and Bangle categories. -->
+        <div id="upload-back-modal" class="upload-name-modal hidden" hidden role="dialog" aria-modal="true" aria-labelledby="upload-back-modal-title">
+          <div class="upload-name-modal__backdrop"></div>
+          <div class="upload-name-modal__card">
+            <h4 id="upload-back-modal-title" class="upload-name-modal__title">Add the back photo</h4>
+            <p id="upload-back-modal-hint" class="upload-name-modal__hint">Rings need a front photo (camera-facing) and a back photo (behind the finger) so the ring can wrap around the finger correctly.</p>
+            <div class="upload-name-modal__actions">
+              <button type="button" id="upload-back-cancel" class="upload-name-modal__btn upload-name-modal__btn--cancel">Cancel</button>
+              <button type="button" id="upload-back-choose" class="upload-name-modal__btn upload-name-modal__btn--confirm">Choose back photo</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-detail" class="vto-view vto-view--detail hidden" data-view="detail" hidden>
+        <button type="button" id="btn-back-grid" class="vto-back vto-back--tryon">← All jewellery</button>
+        <div id="product-detail-panel" class="product-detail-panel"></div>
+      </section>
+
+      <section id="view-tryon" class="vto-view vto-view--tryon hidden" data-view="tryon" hidden>
+        <div class="tryon-topbar">
+          <button type="button" id="btn-back-detail" class="vto-back vto-back--tryon">← Back</button>
+          <p id="tryon-piece-label" class="tryon-piece-label"></p>
+        </div>
+
+        <div id="tryon-camera-slot">
+        <section class="camera-section" aria-label="Camera preview">
+          <div class="viewport-wrapper">
+            <video id="video" playsinline autoplay muted aria-label="Live camera feed"></video>
+            <canvas id="canvas2d" aria-hidden="true"></canvas>
+            <button type="button" id="btn-close-tryon" class="jto-stage__close" hidden aria-label="Close try-on">&times;</button>
+          </div>
+
+          <div id="loading-overlay" class="loading-overlay hidden" role="status" aria-live="polite">
+            <div class="spinner" aria-hidden="true"></div>
+            <p id="loading-text">Loading model&hellip;</p>
+          </div>
+
+          <div id="camera-placeholder" class="camera-placeholder">
+            <div class="placeholder-icon" aria-hidden="true">
+              <svg viewBox="0 0 64 64" width="52" height="52" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="32" cy="32" r="24" stroke="url(#ringGradient)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M32 14a18 18 0 0 1 0 36" stroke="url(#ringGradient)" stroke-width="2.5" stroke-linecap="round"/>
+                <defs>
+                  <linearGradient id="ringGradient" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#E6D7B4"/>
+                    <stop offset="1" stop-color="#7E6733"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+            <p>Tap <strong>Start Camera</strong> to begin</p>
+          </div>
+
+          <div id="instruction-area" class="instruction-area" hidden></div>
+
+          <div class="camera-controls" aria-label="Camera controls">
+            <button id="btn-start" class="btn btn-action btn-tryon-glow" type="button">Start Camera</button>
+            <button id="btn-stop" class="btn btn-action" type="button" disabled>Stop Camera</button>
+            <button id="btn-screenshot" class="btn btn-action" type="button" disabled>Capture</button>
+          </div>
+        </section>
+        </div>
+
+        <div id="jewellery-controls" class="jewellery-controls jewellery-controls--sr" hidden></div>
+      </section>
+
+    </main>
+
+    <footer class="footer">
+      <p>&copy; 2026 Jewellery Try On</p>
+    </footer>
+
+  </div>
+
+  <!-- Mobile console, only when asked for: ?debug -->
+  <script>
+    if (new URLSearchParams(location.search).has('debug')) {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/eruda';
+      s.onload = () => window.eruda && window.eruda.init();
+      document.head.appendChild(s);
+    }
+  </script>
+
+  <!-- Versions are pinned, and MUST stay in step with MP_VERSION in mediapipe.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js" crossorigin="anonymous"></script>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
