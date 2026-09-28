@@ -1912,13 +1912,9 @@ export class Engine2D {
     if (!Number.isFinite(entry.ringAngleUnwrapped)) {
       entry.ringAngleUnwrapped = ringCanvasAngle(_n1);
     } else {
-      const prevLen = Math.hypot(prevAxisX, prevAxisY);
-      const curLen = Math.hypot(_n1.x, _n1.y);
-      if (prevLen > 1e-6 && curLen > 1e-6) {
-        const cross = (prevAxisX * _n1.y - prevAxisY * _n1.x) / (prevLen * curLen);
-        const dot = (prevAxisX * _n1.x + prevAxisY * _n1.y) / (prevLen * curLen);
-        entry.ringAngleUnwrapped += Math.atan2(cross, dot);
-      }
+      const targetAngle = ringCanvasAngle(_n1);
+      const step = angleDiffPeriodic(targetAngle, entry.ringAngleUnwrapped, Math.PI * 2);
+      entry.ringAngleUnwrapped += step;
     }
 
     const fingerWidth = this._ringFingerWidth(entry, hand, finger);
@@ -1950,7 +1946,11 @@ export class Engine2D {
       ? 0
       : pick.quality * axisScore * clearance * steadiness * (1 - covered);
     this._reportFingerConfidence(tracking, finger.key, confidence);
-    if (!this._ringGate(entry, confidence)) return false;
+    if (!this._ringGate(entry, confidence)) {
+      entry.ringAngleUnwrapped = NaN;
+      entry.ringAxis = null;
+      return false;
+    }
 
     const alpha = clamp01(
       (confidence - RING_HIDE_LEVEL) / Math.max(RING_SHOW_LEVEL - RING_HIDE_LEVEL, 1e-6),
@@ -2275,7 +2275,7 @@ export class Engine2D {
         }
 
         const drawTransform = (img) => {
-          this._drawLayer(ctx, img, inst.opacity, cx, cy, -s.angle, ox, oy, drawW, drawH);
+          this._drawLayer(ctx, img, inst.opacity, cx, cy, s.angle, ox, oy, drawW, drawH);
         };
 
         if (wrap) {

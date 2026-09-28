@@ -110,7 +110,8 @@ function injectNotificationStyles() {
       position: fixed;
       left: 0;
       right: 0;
-      bottom: 1.5rem;
+      top: 1.5rem;
+      bottom: auto;
       z-index: 9999;
       pointer-events: none;
       height: 0;
@@ -118,7 +119,8 @@ function injectNotificationStyles() {
     .vto-notification {
       position: absolute;
       left: 50%;
-      bottom: 0;
+      top: 0;
+      bottom: auto;
       width: max-content;
       max-width: min(90vw, 420px);
       padding: 0.7rem 1.4rem;
@@ -132,7 +134,7 @@ function injectNotificationStyles() {
       box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 24px rgba(var(--gold-rgb, 197, 164, 100), 0.15);
       text-align: center;
       opacity: 0;
-      transform: translateX(-50%) translateY(calc(var(--stack-y, 0px) + 18px));
+      transform: translateX(-50%) translateY(calc(var(--stack-y, 0px) - 18px));
       transition: opacity 0.38s ease, transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
       pointer-events: none;
     }
@@ -188,7 +190,7 @@ function layoutNotificationStack() {
     const item = notificationItems[i];
     if (item.exiting) continue;
     const opacity = depth === 0 ? 1 : depth === 1 ? 0.52 : 0.26;
-    item.el.style.setProperty('--stack-y', `${-offset}px`);
+    item.el.style.setProperty('--stack-y', `${offset}px`);
     item.el.style.setProperty('--stack-opacity', String(opacity));
     offset += item.el.offsetHeight + NOTIFICATION_GAP;
     depth += 1;
@@ -609,19 +611,35 @@ function buildFingerPicker() {
   picker.className = 'vto-finger-picker';
   picker.hidden = true;
 
-  const hint = document.createElement('p');
+  const hint = document.createElement('button');
+  hint.type = 'button';
   hint.className = 'vto-finger-hint';
   hint.setAttribute('role', 'status');
+  hint.setAttribute('title', 'Tap on any finger in the camera to move the ring');
+  hint.setAttribute('aria-label', 'Ring Category: Tap on any finger in camera to move ring');
 
   const dot = document.createElement('span');
   dot.className = 'vto-finger-hint__dot';
   dot.setAttribute('aria-hidden', 'true');
 
+  const categoryTag = document.createElement('span');
+  categoryTag.className = 'vto-finger-hint__category';
+  categoryTag.textContent = 'RING';
+
+  const sep = document.createElement('span');
+  sep.className = 'vto-finger-hint__sep';
+  sep.setAttribute('aria-hidden', 'true');
+  sep.textContent = '•';
+
   const text = document.createElement('span');
   text.className = 'vto-finger-hint__text';
-  text.textContent = 'Tap the finger you want on the camera';
+  text.textContent = 'Tap finger to place';
 
-  hint.append(dot, text);
+  hint.append(dot, categoryTag, sep, text);
+  hint.addEventListener('click', () => {
+    showNotification('Tap directly on any finger in the camera to place the ring');
+  });
+
   picker.appendChild(hint);
   instructionArea.appendChild(picker);
   return picker;
@@ -648,8 +666,8 @@ function syncFingerPicker() {
   const text = picker.querySelector('.vto-finger-hint__text');
   if (text) {
     text.textContent = tryOnOnProductPage
-      ? 'Tap a finger to move the ring'
-      : 'Tap the finger you want on the camera';
+      ? 'Tap finger to place'
+      : 'Tap finger on camera';
   }
   // Only a ring makes the camera itself tappable
   video.parentElement?.classList.toggle('vto-pickable', ringActive);
