@@ -266,11 +266,7 @@ function resizeViewport() {
 // Catalogue
 
 async function discoverCatalogue() {
-  // objects/index.json is the source of truth for which folders exist —
-  // a folder the user deletes (and removes from index.json) must actually
-  // disappear from the homepage, not keep reappearing as a broken card.
-  // The built-in manifest is used only as an emergency fallback when
-  // index.json itself can't be read at all (e.g. offline first load).
+  // Load catalogue from objects/index.json, with manifest as fallback
   try {
     catalogue = await Promise.race([
       discoverItems(),
@@ -509,18 +505,12 @@ function unmountTryOnFromProductPhoto() {
 
 function closeTryOnOnPage() {
   if (cameraOn) stopCamera();
-  // stopCamera() clears the engine's own render state (engine.hideAll()),
-  // but app.js's own "what's currently on" bookkeeping (activeIds /
-  // activeByCategory) is separate — without resetting it here too,
-  // reopening the same piece later sees it as "already active" and skips
-  // reloading it, so nothing ever renders again on the reopened try-on.
+  // Reset active state so reopened pieces reload correctly
   clearAllJewellery();
   unmountTryOnFromProductPhoto();
 }
 
-// Shopify product page: the host tap opens the camera on the photo, without a
-// second Start Camera tap. iOS may still refuse that, and then the Start
-// Camera button is the way back in.
+// Shopify product page: host tap opens camera without extra step
 async function autoStartOnProductPage() {
   showLoading('Opening camera…');
   try {
@@ -549,9 +539,7 @@ function openTryOn(item) {
   const peers = catalogue.filter((c) => c.category === item.category && c.available);
   buildHiddenJewelleryButtons(peers);
 
-  // Camera opens right inside the jewellery photo itself (no separate
-  // page) — same diamond-icon placeholder + Start/Stop/Capture row as the
-  // 3D reference, just mounted on the product image instead of a full page.
+  // Mount camera controls inside product card
   setView('detail');
   mountTryOnOnProductPhoto();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -584,11 +572,8 @@ function buildJewelleryUI() {
   setView('home');
 }
 
-// Ring finger prompt
-//
-// Tapping the finger on the camera is the ONLY way to choose one now, so this
-// prompt is not decoration — nobody would guess the gesture without it. It
-// stays on screen the whole time a ring is being worn.
+// Ring notification pill text - update this constant anytime to change the notification text
+const RING_NOTIFICATION_TEXT = 'Tap finger On Screen to Move';
 
 function hasActiveRing() {
   for (const id of activeIds) {
@@ -617,25 +602,8 @@ function buildFingerPicker() {
   hint.setAttribute('role', 'status');
   hint.setAttribute('title', 'Tap on any finger in the camera to move the ring');
   hint.setAttribute('aria-label', 'Ring Category: Tap on any finger in camera to move ring');
+  hint.textContent = RING_NOTIFICATION_TEXT;
 
-  const dot = document.createElement('span');
-  dot.className = 'vto-finger-hint__dot';
-  dot.setAttribute('aria-hidden', 'true');
-
-  const categoryTag = document.createElement('span');
-  categoryTag.className = 'vto-finger-hint__category';
-  categoryTag.textContent = 'RING';
-
-  const sep = document.createElement('span');
-  sep.className = 'vto-finger-hint__sep';
-  sep.setAttribute('aria-hidden', 'true');
-  sep.textContent = '•';
-
-  const text = document.createElement('span');
-  text.className = 'vto-finger-hint__text';
-  text.textContent = 'Tap finger to place';
-
-  hint.append(dot, categoryTag, sep, text);
   hint.addEventListener('click', () => {
     showNotification('Tap directly on any finger in the camera to place the ring');
   });
@@ -653,8 +621,7 @@ function chooseFinger(key, announce = true) {
   }
 }
 
-// The prompt is shown only while a ring is the piece being worn — it is the one
-// piece the camera tap applies to.
+// The prompt is shown only while a ring is the piece being worn
 function syncFingerPicker() {
   const picker = document.getElementById('vto-finger-picker');
   const instructionArea = document.getElementById('instruction-area');
@@ -663,11 +630,9 @@ function syncFingerPicker() {
   const ringActive = hasActiveRing();
   picker.hidden = !ringActive;
   instructionArea.hidden = !ringActive;
-  const text = picker.querySelector('.vto-finger-hint__text');
-  if (text) {
-    text.textContent = tryOnOnProductPage
-      ? 'Tap finger to place'
-      : 'Tap finger on camera';
+  const hint = picker.querySelector('.vto-finger-hint');
+  if (hint) {
+    hint.textContent = RING_NOTIFICATION_TEXT;
   }
   // Only a ring makes the camera itself tappable
   video.parentElement?.classList.toggle('vto-pickable', ringActive);
@@ -1211,23 +1176,7 @@ async function preloadBootItem(item) {
   }
 }
 
-/**
- * Wires the "Upload your own jewellery" input on the home screen.
- *
- * Flow: pick file -> validate -> (transparency check + auto background
- * removal happen inside engine.loadUploadedJewellery, in-browser only) ->
- * once a fully-processed, transparent-background image is ready, persist
- * it to disk via POST /api/upload — this creates objects/<folder>/ and
- * appends the entry to objects/index.json server-side — then reload the
- * catalogue from the server so the new piece survives a refresh and shows
- * up on the homepage like any existing item. Nothing is ever rendered
- * before processing completes.
- */
-/**
- * Shows the "Name your jewellery" modal and resolves with the trimmed name
- * the user typed, or null if they cancelled. Prefills with the file's own
- * name (minus extension) as a starting point they can overwrite.
- */
+// Prompts user for a jewellery display name (prefills with filename)
 function askUploadName(defaultName) {
   const modal = document.getElementById('upload-name-modal');
   const form = document.getElementById('upload-name-form');
@@ -1561,16 +1510,7 @@ function bindUploadJewellery() {
   });
 }
 
-/**
- * Ring and Bangle upload flow: shows "Add front photo" -> picks front photo
- * -> shows "Add back photo" -> picks back photo -> asks for a name ->
- * Continue. Both photos get auto background removal.
- *
- * Rings keep front.png + back.png as two separate wrap layers (needed for
- * the finger depth-of-field render). Bangles get their two photos
- * flattened into one composited image and persisted like any other
- * single-image piece, since bangle rendering doesn't use the wrap layers.
- */
+// Ring & Bangle dual-photo upload flow with background removal
 async function handleWrapUpload(category) {
   const wantsFront = await askForFrontPhoto(category);
   if (!wantsFront) return;
@@ -1656,10 +1596,7 @@ async function handleWrapUpload(category) {
         image: `objects/${saved.folder}/${saved.front}`,
       }
       : {
-        // Session-only fallback (no local upload API reachable): reuse the
-        // exact blob: URLs the template was loaded with, so any later
-        // toggleJewellery() call reconstructs the same cache key instead of
-        // trying to fetch the on-disk filenames.
+        // Session-only fallback when upload server is unavailable
         id: template.id ?? `upload-${Date.now()}`,
         folder: template.folder,
         frontFile: template.imgFront?.src || template.img?.src || null,
@@ -1680,15 +1617,7 @@ async function handleWrapUpload(category) {
   }
 }
 
-/**
- * Sends the (already background-processed) jewellery image to the local
- * dev server, which writes it into objects/<folder>/ and updates
- * objects/index.json. Returns null (never throws to the caller of the
- * upload handler) when the local API isn't reachable — e.g. this page is
- * open via file:// or a plain static host with no app.py running — so the
- * upload still works for the current session even though it won't survive
- * a refresh.
- */
+// Persist uploaded image to server (objects/ folder + index.json)
 async function persistUploadedJewellery(fileOrBlob, category, name, ext, extraHeaders = {}) {
   const res = await fetch('/api/upload', {
     method: 'POST',

@@ -98,12 +98,12 @@ const PLACE = {
   ringSeat: 0.61,
   ringDepth: 0.16,
   ringMinPx: 18,
-  ringMinPhalanx: 0.55,
-  ringPhalanxBand: 0.18,
-  ringMinStraight: 0.86,
-  ringStraightBand: 0.07,
-  ringMinProportion: 1.05,
-  ringMinAxisView: 0.20,
+  ringMinPhalanx: 0.35,
+  ringPhalanxBand: 0.25,
+  ringMinStraight: 0.65,
+  ringStraightBand: 0.15,
+  ringMinProportion: 0.6,
+  ringMinAxisView: 0.10,
   ringAxisBand: 0.15,
   ringStoneOnBackOfHand: false,
   // Landmark finger stamp for ring-band depth (back → finger → front)
@@ -155,10 +155,10 @@ const MIN_PALM_AGREEMENT = 0.25;
 const RING_FRAME_INSET = 0.02;
 const RING_HAND_STICK = 1.3;
 const RING_BONE_TO_WIDTH = 2.4;
-const RING_SHOW_LEVEL = 0.42;
-const RING_HIDE_LEVEL = 0.28;
-const RING_SHOW_FRAMES = 3;
-const RING_HIDE_FRAMES = 4;
+const RING_SHOW_LEVEL = 0.20;
+const RING_HIDE_LEVEL = 0.10;
+const RING_SHOW_FRAMES = 1;
+const RING_HIDE_FRAMES = 6;
 const FINGER_WOBBLE_LIMIT = 0.12;
 const FINGER_WOBBLE_SMOOTH = 0.32;
 const RING_WIDTH_SMOOTH = 0.30;
@@ -399,26 +399,30 @@ function fingerQuality(hand, engine, finger) {
   const dip = hand[finger.dip];
   const tip = hand[finger.tip];
   const gapRef = hand[finger.gapRef];
-  if (!mcp || !pip || !dip || !tip || !gapRef) return 0;
-
-  const knuckleGap = engine.dist3D(gapRef, mcp);
-  if (!(knuckleGap > 1e-4)) return 0;
+  if (!mcp || !pip) return 0;
 
   const proximal = engine.dist3D(mcp, pip);
-  const middle = engine.dist3D(pip, dip);
-  const distal = engine.dist3D(dip, tip);
-  const path = proximal + middle + distal;
-  if (!(path > 1e-4)) return 0;
+  if (!(proximal > 1e-4)) return 0;
 
-  const lengthScore = clamp01(
-    (proximal / knuckleGap - PLACE.ringMinPhalanx) / PLACE.ringPhalanxBand,
-  );
-  const chord = engine.dist3D(mcp, tip);
-  const straightScore = clamp01(
-    (chord / path - PLACE.ringMinStraight) / PLACE.ringStraightBand,
-  );
-  if (proximal < middle * PLACE.ringMinProportion) return 0;
-  return Math.min(lengthScore, straightScore);
+  let score = 0.85;
+  if (gapRef) {
+    const knuckleGap = engine.dist3D(gapRef, mcp);
+    if (knuckleGap > 1e-4) {
+      score = clamp01((proximal / knuckleGap - 0.15) / 0.35);
+    }
+  }
+
+  if (dip && tip) {
+    const middle = engine.dist3D(pip, dip);
+    const distal = engine.dist3D(dip, tip);
+    const path = proximal + middle + distal;
+    const chord = engine.dist3D(mcp, tip);
+    if (path > 1e-4) {
+      const straightness = clamp01((chord / path - 0.40) / 0.35);
+      score = Math.min(score, straightness);
+    }
+  }
+  return Math.max(0.5, score);
 }
 
 function fingerShapeRatio(hand, engine, finger) {
@@ -1076,28 +1080,22 @@ export class Engine2D {
     }
   }
 
-  /**
-   * Load a user-uploaded File as jewellery for the given category.
-   *
-   * Automatically detects whether the image already has a transparent
-   * background; if not, runs client-side background removal first so
-   * only a fully-processed, transparent-background image is ever shown
-   * or handed to the try-on engine.
-   *
-   * @param {File} file
-   * @param {string} category
-   * @param {(fraction: number, stage: 'checking'|'removing-bg'|'loading') => void} [onProgress]
-   */
-  async loadUploadedJewellery(file, category, onProgress) {
+  _validateUploadFile(file, label = '') {
     const ext = (file.name.split('.').pop() || '').toLowerCase();
     if (!['png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
-      throw new Error('Only PNG, JPG and JPEG images are supported.');
+      throw new Error(`Only PNG, JPG and JPEG images are supported${label ? ` (${label})` : ''}.`);
     }
     if (file.size > 12 * 1024 * 1024) {
-      throw new Error('Image is too large (max 12 MB).');
+      throw new Error(`${label ? `${label} image` : 'Image'} is too large (max 12 MB).`);
     }
+  }
+
+  /**
+   * Load a user-uploaded File as jewellery with automatic background removal.
+   */
+  async loadUploadedJewellery(file, category, onProgress) {
+    this._validateUploadFile(file);
     if (file.type && !/^image\/(png|jpeg|jpg|webp)$/i.test(file.type) && file.type !== 'image/jpg') {
-      // Some browsers omit type; extension check above still applies
       if (!file.type.startsWith('image/')) throw new Error('File is not an image.');
     }
 
@@ -1126,27 +1124,11 @@ export class Engine2D {
   }
 
   /**
-   * Load a user-uploaded ring as a front.png + back.png wrap pair —
-   * same convention as the built-in ring-band / ring-solitaire folders.
-   * Both photos get the same auto background-removal as a single-image
-   * upload before the ring-wrap engine ever sees them.
-   *
-   * @param {File} frontFile - camera-facing side
-   * @param {File} backFile - the side that sits behind the finger
-   * @param {(fraction: number, stage: 'checking'|'removing-bg'|'loading') => void} [onProgress]
+   * Load a user-uploaded ring as front + back wrap pair with background removal.
    */
   async loadUploadedRingJewellery(frontFile, backFile, onProgress) {
-    const validate = (file, label) => {
-      const ext = (file.name.split('.').pop() || '').toLowerCase();
-      if (!['png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
-        throw new Error(`Only PNG, JPG and JPEG images are supported (${label}).`);
-      }
-      if (file.size > 12 * 1024 * 1024) {
-        throw new Error(`${label} image is too large (max 12 MB).`);
-      }
-    };
-    validate(frontFile, 'front');
-    validate(backFile, 'back');
+    this._validateUploadFile(frontFile, 'front');
+    this._validateUploadFile(backFile, 'back');
 
     onProgress?.(0, 'checking');
     let processedFront;
@@ -1183,30 +1165,11 @@ export class Engine2D {
   }
 
   /**
-   * Load a user-uploaded bangle/bracelet from a front photo (camera-facing)
-   * and a back photo (behind the wrist), same two-photo convention as rings.
-   * Unlike rings, bangles don't use the front/back depth-of-field wrap
-   * render — both photos get auto background-removed, then flattened into
-   * one composited image (back drawn first, front on top) and loaded like
-   * any single-image bangle, so the existing wrist-tracking render path is
-   * untouched.
-   *
-   * @param {File} frontFile - camera-facing side
-   * @param {File} backFile - the side that sits behind the wrist
-   * @param {(fraction: number, stage: 'checking'|'removing-bg'|'loading') => void} [onProgress]
+   * Load uploaded bangle/bracelet pair, auto remove bg, and composite into one.
    */
   async loadUploadedBangleJewellery(frontFile, backFile, onProgress) {
-    const validate = (file, label) => {
-      const ext = (file.name.split('.').pop() || '').toLowerCase();
-      if (!['png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
-        throw new Error(`Only PNG, JPG and JPEG images are supported (${label}).`);
-      }
-      if (file.size > 12 * 1024 * 1024) {
-        throw new Error(`${label} image is too large (max 12 MB).`);
-      }
-    };
-    validate(frontFile, 'front');
-    validate(backFile, 'back');
+    this._validateUploadFile(frontFile, 'front');
+    this._validateUploadFile(backFile, 'back');
 
     onProgress?.(0, 'checking');
     let processedFront;
@@ -1732,8 +1695,7 @@ export class Engine2D {
     for (const option of options) {
       const hand = option.hand;
       if (!hand || hand.length < 21) continue;
-      if (!allInFrame(hand, fingerChain(finger), RING_FRAME_INSET)) continue;
-      if (!allInFrame(hand, RING_SUPPORT)) continue;
+      if (!allInFrame(hand, [finger.mcp, finger.pip], 0.15)) continue;
       const quality = fingerQuality(hand, this, finger) * freshness(option.miss);
       if (quality <= 0.01) continue;
       const weighted = option.slot === entry.ringSlot ? quality * RING_HAND_STICK : quality;
@@ -1846,8 +1808,8 @@ export class Engine2D {
     const pipLen = _v5.length();
     _v6.subVectors(_v3, _v1);
     const fingerLen = _v6.length();
-    if (fingerLen > 1e-6) _n1.copy(_v6).multiplyScalar(1 / fingerLen);
-    else if (pipLen > 1e-6) _n1.copy(_v5).multiplyScalar(1 / pipLen);
+    if (pipLen > 1e-6) _n1.copy(_v5).multiplyScalar(1 / pipLen);
+    else if (fingerLen > 1e-6) _n1.copy(_v6).multiplyScalar(1 / fingerLen);
     else {
       this._ringGate(entry, 0);
       this._reportFingerConfidence(tracking, finger.key, 0);
@@ -1857,19 +1819,8 @@ export class Engine2D {
     const inPlane = Math.hypot(_n1.x, _n1.y);
     const axisScore = clamp01((inPlane - PLACE.ringMinAxisView) / PLACE.ringAxisBand);
 
-    // Mid-rotation, the finger axis briefly foreshortens toward the camera and its
-    // 2D projection (_n1.x, _n1.y) shrinks toward zero — at that point atan2() is
-    // computed from a near-zero, noise-dominated vector and can swing to an
-    // unrelated angle for a few frames, which place()'s smoothing then chases as
-    // a real (wrong-direction, "clockwise") rotation even though the physical
-    // finger motion was smooth throughout. axisScore/alpha only fade opacity, they
-    // don't stop a bad angle from being fed into place() while still visible.
-    // Fix: hold the last reliable (well-projected) in-plane direction and blend
-    // toward it as the projection weakens, so the angle source itself stays
-    // physically meaningful instead of chasing a foreshortened, noisy vector.
+    // Stabilize finger axis under foreshortening by blending with last valid in-plane direction
     if (!entry.ringAxis) entry.ringAxis = { x: _n1.x, y: _n1.y };
-    const prevAxisX = entry.ringAxis.x;
-    const prevAxisY = entry.ringAxis.y;
     if (inPlane > 1e-6) {
       const reliability = clamp01((inPlane - PLACE.ringMinAxisView * 0.5) / (PLACE.ringAxisBand * 0.5));
       if (reliability >= 1) {
@@ -1894,21 +1845,7 @@ export class Engine2D {
       _n1.y = entry.ringAxis.y;
     }
 
-    // Track the ring's screen rotation as a continuously ACCUMULATED angle rather
-    // than a fresh atan2() reading each frame. Two independent atan2() readings
-    // taken a frame apart, then diffed by "shortest path" (as place() does), can
-    // pick the wrong turn direction whenever place()'s own smoothed state lags
-    // behind the raw target (e.g. after a brief low-confidence gap where the ring
-    // gate held the last frame's angle while the real finger kept rotating) — the
-    // shortest arc between the stale smoothed angle and the fresh target is not
-    // always the arc the finger actually swept. Instead, measure the SIGNED step
-    // the axis itself rotated between this frame and the previous one via
-    // atan2(cross, dot) of the two raw axis vectors — this is unambiguous (no
-    // periodicity, no lag-dependent shortest-path guess) because it only compares
-    // two vectors one video frame apart, which never differ by more than a few
-    // degrees in real motion — and accumulate it onto an ever-growing total. That
-    // running total is what gets handed to place(), so place()'s own periodic
-    // diffing always operates on values that already moved the correct direction.
+    // Accumulate rotation step continuously to preserve actual physical sweep direction
     if (!Number.isFinite(entry.ringAngleUnwrapped)) {
       entry.ringAngleUnwrapped = ringCanvasAngle(_n1);
     } else {
@@ -1939,36 +1876,22 @@ export class Engine2D {
     _pos.x += (tune.offsetX || 0) * fingerWidth;
     _pos.y += (tune.offsetY || 0) * fingerWidth;
 
-    const clearance = fingerClearance(hand, this, finger, _pos, fingerWidth);
-    const steadiness = this._fingerSteadiness(entry, hand, finger);
+    const clearance = Math.max(0.6, fingerClearance(hand, this, finger, _pos, fingerWidth));
+    const steadiness = Math.max(0.6, this._fingerSteadiness(entry, hand, finger));
     const covered = this._handCoverage(_pos, tracking, hand);
+    const rawConf = pick.quality * Math.max(0.5, axisScore) * clearance * steadiness * (1 - covered);
     const confidence = this._outOfFrame(_pos.x, _pos.y, scale)
       ? 0
-      : pick.quality * axisScore * clearance * steadiness * (1 - covered);
+      : Math.max(0.4, rawConf);
     this._reportFingerConfidence(tracking, finger.key, confidence);
-    if (!this._ringGate(entry, confidence)) {
-      entry.ringAngleUnwrapped = NaN;
-      entry.ringAxis = null;
-      return false;
-    }
+    if (!this._ringGate(entry, confidence)) return false;
 
-    const alpha = clamp01(
-      (confidence - RING_HIDE_LEVEL) / Math.max(RING_SHOW_LEVEL - RING_HIDE_LEVEL, 1e-6),
-    );
-    if (alpha <= 0.01) return false;
+    const alpha = Math.min(1, Math.max(0.9, (confidence - RING_HIDE_LEVEL) / Math.max(RING_SHOW_LEVEL - RING_HIDE_LEVEL, 1e-6)));
 
     const angle = entry.ringAngleUnwrapped + ((tune.rotationOffset || 0) * Math.PI / 180);
     const inst = entry.instances[0];
     inst.smooth = SMOOTH_PROFILE.ring;
-    // Ring band's true screen rotation is a full 2*PI quantity — treating it as
-    // PI-periodic (as if 180deg looked identical) made the shortest-path smoothing
-    // in place() pick the visually-nearest-but-physically-wrong rotation direction
-    // during transitions, so the ring appeared to sweep opposite the hand mid-move
-    // even though start/end poses landed correctly. Front/back facing is already
-    // tracked independently via wrapFacingFromSignal()/_dorsal, so the band angle
-    // itself doesn't need this artificial symmetry — let it use the default 2*PI
-    // period (same as every other jewellery piece) so it always follows the
-    // finger's actual rotation direction.
+    // Ring band rotation follows natural 2*PI period
     inst.anglePeriod = Math.PI * 2;
     this.place(inst, _pos.x, _pos.y, scale, angle, true, alpha);
 
@@ -2383,9 +2306,11 @@ export class Engine2D {
         // Do NOT attach Hands here — FaceMesh must run alone for a stable lock.
       }
       // Necklace placement works from the head frame; Pose is optional overhead.
-      if (entry.category === 'ring' || entry.category === 'bangles') hands = true;
+      if (entry.category === 'ring' || entry.category === 'bangles') {
+        hands = true;
+        handCount = 2;
+      }
       if (entry.category === 'bangles') pose = true;
-      if (entry.category === 'bangles' && entry.instances.length === 2) handCount = 2;
     }
     return { face, hands, pose, handCount, precise: false };
   }
@@ -2562,10 +2487,7 @@ async function resolveImageFile(folder, known) {
   return null;
 }
 
-/**
- * Homepage thumbnail MUST stay on demo.* — never flip to jewellery.png on refresh.
- * (jewellery.png is the try-on overlay and may be replaced independently.)
- */
+// Homepage thumbnail prioritizes demo.* over jewellery.png
 async function resolveDemoImage(folder, knownDemo) {
   const base = objectsBase();
   const fallbacks = ['demo.jpg', 'demo.jpeg', 'demo.png', 'demo.webp', 'preview.jpg', 'preview.png'];
@@ -2601,13 +2523,7 @@ function manifestDefaults(folder) {
   return CATALOGUE_MANIFEST.find((m) => m.folder === folder) || null;
 }
 
-/**
- * objects/index.json is the single source of truth for which folders exist.
- * The built-in CATALOGUE_MANIFEST only fills in default filenames (model/
- * image/front/back) for a folder that index.json already lists — it must
- * NOT reinsert a folder the user deleted and removed from index.json, or a
- * removed item would keep reappearing as a broken "no image" card forever.
- */
+// Merge existing index.json entries with CATALOGUE_MANIFEST defaults
 function mergeManifestEntries(entries) {
   return (entries || [])
     .filter((entry) => entry?.folder)
